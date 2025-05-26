@@ -1,0 +1,242 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+install required packages
+```{r}
+install.packages("R.utils")
+```
+
+
+## Chapter 1: Setting things up ##    
+
+Provide the path to your local project directory
+```{r}
+projDir <- "/home/girouxeml/projects"
+```
+
+Give a name to the project you will be working on
+```{r}
+analysis <- "bovine_tuberculosis_vSNP"
+```
+
+Provide the path you want this project to be located at
+```{r}
+projAnalysisPath <- paste(projDir, analysis, sep = "/")
+# This is called baseDir in Marco's script, so apply here too until scripts is all edited and functional
+baseDir <- projAnalysisPath
+```
+
+Create the project's directory
+```{r}
+# this format will prevent the project directory to be rewritten if it already exists
+if(!dir.exists(paste(projDir, analysis, sep = "/"))) dir.create(paste(projDir, analysis, sep = "/"))
+```
+
+Provide the paths to the raw data on the network (need to mount this network directory first outside of this script)   
+The fastq referencces we need are saved on the Bioinformatics network driv. To mount it, do:   
+   
+create the local bioinformatics directory in the media directory:   
+$ mkdir ~/media/bioinfoData   
+
+The path to the bioinformatics drive on the network is:  //10.130.18.98/bioinformatics   
+
+To mount do:   
+$ sudo mount -t cifs -o credentials=/home/girouxeml/.smbcredentials //10.130.18.98/bioinformatics /home/girouxeml/media/bioinfoData   
+
+Note:   
+The vSNP USDA reference data is located within this mount at the following path:
+```{r}
+fastqDir <- "/home/girouxeml/media/bioinfoData/Mbovis/sequencing_data/usda/illumina/"
+```
+
+Create the initial output directories within your project directory
+```{r}
+# create a dir to hold the new vcf files
+vcfDirName <- "vcf_vSNP"
+vcfDir <- paste(projAnalysisPath, vcfDirName, sep = "/")
+
+if(!dir.exists(vcfDir)) dir.create(vcfDir)
+
+# create a dir for the first step of the analysis
+stepName <- "step1"
+step1Dir <- paste(projAnalysisPath, stepName, sep = "/")
+if(!dir.exists(step1Dir)) dir.create(step1Dir)
+```
+
+# Create symbolic links for new fastq files
+```{r}
+library(R.utils)
+
+fastqList <- list.files(path = fastqDir, pattern = "*.gz")
+
+fastqList
+
+for (i in 1:length(fastqList)) {
+  linkPath <- paste(step1Dir, fastqList[i], sep = "/")
+  targetPath <- paste(fastqDir, fastqList[i], sep = "/")
+  createLink(linkPath, targetPath, overwrite = FALSE)
+}
+```
+
+# Organize paired-end fastq in folder by sample
+```{r}
+fastqNames <- list.files(path = fastqDir, pattern = "*.gz")
+
+fastqNames
+
+for (i in 1:length(fastqNames)){
+  name <- gsub("_.*", "", fastqNames[i])
+  if(!dir.exists(paste(step1Dir, name[i], sep = "/"))) dir.create(paste(step1Dir, name[i], sep = "/"))
+  file.rename(from = paste(step1Dir, fastqNames[i], sep = "/"), to = paste(step1Dir, name, fastqNames[i], sep = "/"))
+}
+```
+
+
+Save the environment:   
+I created a dedicated directory to save R environments for this project at:   
+/home/girouxeml/GitHub_Repos/r_environments/bovine_tuberculosis_vSNP   
+
+
+Save the image and load this at the beginning of each amplicon region processing and analysis workflow:
+To Emily: Hey , i left the base code commented out , incase you found that the function is not working as intended. 
+```{r}
+imageDirPath <- "/home/girouxeml/GitHub_Repos/r_environments/bovine_tuberculosis_vSNP"
+if(!dir.exists(imageDirPath)) dir.create(imageDirPath)
+
+# # Specify an image name for this chapter:
+setUpImage <- "bovineTB_vSNP_SetUpImage.RData"
+ 
+# # Save this chapter's image:
+save.image(paste(imageDirPath, setUpImage, sep = "/"))
+```
+
+
+To load the start up environment when starting a new session from this point in the script, do:   
+```{r}
+imageDirPath <- "/home/girouxeml/GitHub_Repos/r_environments/bovine_tuberculosis_vSNP"
+setUpImage <- "bovineTB_vSNP_SetUpImage.RData"
+load(paste(imageDirPath, setUpImage, sep = "/"))
+```
+
+
+## Chapter 2: Running vSNP3 step 1 ##    
+
+Finally, run vSNP step 1
+
+
+*** Over here!!! 21May2025
+Create the function
+```{r}
+RunvSNP <- function(){
+  cat(paste("#!/bin/bash
+            "))
+  
+}
+
+
+
+# Function to run vSNP3 step1
+function run_vsnp3(){
+    cd "$1" 
+
+    r1=$(find -L "$1" -type f -name "*_R1*")
+    r2=$(echo "$r1" | sed 's/_R1/_R2/')
+
+    vsnp3_step1.py \
+        -r1 "$r1" \
+        -r2 "$r2" \
+        --spoligo
+}
+
+# Make function available to parallel
+export -f run_vsnp3
+
+# Run vSNP3 step1 in parallel
+find -L $(pwd) -mindepth 1 -maxdepth 1 -type d | \
+    parallel --bar --env run_vsnp3 --jobs 8 "run_vsnp3 {}" 
+
+```
+
+
+
+
+
+### Step1 ###
+
+baseDir=/home/girouxeml/projects/bovine_tuberculosis_vSNP
+
+# Need to have mounted the network drive where the data exists, in the media directory
+fastqDir=/media/36tb/data/Mbovis/illumina/TB23A020_bTb_SK2023__Seq_batch_2
+vcfDir=/media/36tb/data/Mbovis/illumina/vcf_canada_vSNP3.11
+
+# Create working folder
+mkdir -p "${baseDir}"/step1
+cd "${baseDir}"/step1
+# Create symbolic links for new fastq files
+find "$fastqDir" -type f -name "*.gz" -exec ln -s {} $(pwd) \;
+
+# Organize paired-end fastq in folder by sample
+for fastq in *.fastq.gz; do
+    name=$(echo $fastq | sed 's/[._].*//'); mkdir -p $name; mv -v $fastq $name/
+done
+
+# Function to run vSNP3 step1
+function run_vsnp3(){
+    cd "$1" 
+
+    r1=$(find -L "$1" -type f -name "*_R1*")
+    r2=$(echo "$r1" | sed 's/_R1/_R2/')
+
+    vsnp3_step1.py \
+        -r1 "$r1" \
+        -r2 "$r2" \
+        --spoligo
+}
+
+# Make function available to parallel
+export -f run_vsnp3
+
+# Run vSNP3 step1 in parallel
+find -L $(pwd) -mindepth 1 -maxdepth 1 -type d | \
+    parallel --bar --env run_vsnp3 --jobs 8 "run_vsnp3 {}" 
+
+# Combine all step1 stat files into a single file
+mkdir -p "${baseDir}"/step1/stats
+find "${baseDir}"/step1 -name "*stat*xlsx" -exec cp -v {} stats \;
+cd "${baseDir}"/step1/stats
+vsnp3_excel_merge_files.py
+
+### Step2 ###
+
+# Create folder for step2
+mkdir -p "${baseDir}"/step2_all
+cd "${baseDir}"/step2_all
+
+# Link new zc.vcf files to folder
+find "${baseDir}"/step1 -type f -name "*zc.vcf" -exec ln -s {} "${baseDir}"/step2_all \;
+
+# Link all Canadian zc.vcf files to folder
+find "$vcfDir" -type f -name "*zc.vcf" -exec ln -s {} "${baseDir}"/step2_all \;
+
+# Run step2 for the "all" tree only
+vsnp3_step2.py -a -s /media/36tb/data/Mbovis/Mbovis_define_filter_OLF_expanded_2023-08-18.xlsx
+
+# Only keep the "Mbovis-All" folder
+find "${baseDir}"/step2_all \
+    -mindepth 1 -maxdepth 1 -type d ! -name Mbovis-All -exec rm -rf {} \;
+
+# Run step2 for the SNP table by group
+mkdir -p "${baseDir}"/step2_groups
+cd "${baseDir}"/step2_groups
+
+# Get the vcf files again
+cp "${baseDir}"/step2_all/vcf_starting_files.zip "${baseDir}"/step2_groups
+unzip vcf_starting_files.zip
+rm vcf_starting_files.zip
+vsnp3_step2.py -s /media/36tb/data/Mbovis/Mbovis_define_filter_OLF_2023-08-18.xlsx
